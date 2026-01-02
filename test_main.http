@@ -1,0 +1,45 @@
+# Test your FastAPI endpoints
+
+GET http://127.0.0.1:8000/movies
+Accept: application/json
+
+###
+
+GET http://127.0.0.1:8000/movies/3
+Accept: application/json
+
+###
+
+POST http://127.0.0.1:8000/movies/
+Content-Type: application/json
+
+{
+  "title": "Casablanca",
+  "year": 1942,
+  "actors": "Humphrey Bogart, Ingrid Bergman, Paul Henreid, Claude Rains"
+}
+
+###
+
+DELETE http://127.0.0.1:8000/movies/10
+Accept: application/json
+
+###
+
+DELETE http://127.0.0.1:8000/movies/batch
+Accept: application/json
+Content-Type: application/json
+
+[9, 10]
+
+###
+
+PUT http://127.0.0.1:8000/movies/1
+Accept: application/json
+Content-Type: application/json
+
+{
+  "title": "The Matrix",
+  "year": 2000,
+  "actors": "Keanu Reeves, Laurence Fishburne"
+}
