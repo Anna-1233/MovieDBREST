@@ -6,14 +6,21 @@ A RESTful API for managing a movie database, built with FastAPI and SQLite.
 
 ## Endpoints
 
-| Method | Endpoint                 | Description                                                              |
-|--------|--------------------------|--------------------------------------------------------------------------|
-| GET    | ```/movies```            | Retrieve a list of all movies from the database.                         |
-| GET    | ```/movies/{movie_id}``` | Retrieve detailed information about a specific movie by its unique ID.   |
-| POST   | ```/movies```            | Add a new movie to the database.                                         |
-| PUT    | ```/movies/{movie_id}``` | Edit and update a movie from the database.                               |
-| DELETE | ```/movies/{movie_id}``` | Delete a movie from the database.                                        |
-| DELETE | ```/movies/batch```      | Delete multiple movies by their IDs.                                     |
+| Method | Endpoint                      | Description                                                            |
+|--------|-------------------------------|------------------------------------------------------------------------|
+| GET    | ```/actors```                 | Retrieve a list of all actors from the database.                       |
+| GET    | ```/actor/{actor_id}```       | Retrieve detailed information about an actor by his unique ID.         |
+| POST   | ```/actors```                 | Add an actor to the database.                                          |
+| PUT    | ```/actors/{actor_id}```      | Edit and update existing an actor from the database.                   |
+| DELETE | ```/actors/{actor_id}```      | Delete an actor and his associations from database.                    |
+| DELETE | ```/actors/batch```           | Delete multiple actors and their associations by their IDs.            |
+| GET    | ```/movies```                 | Retrieve a list of all movies from the database.                       |
+| GET    | ```/movies/{movie_id}```      | Retrieve detailed information about a specific movie by its unique ID. |
+| GET    | ```/movies/{movies}/actors``` | Retrieve actors information for specific movie.                        |
+| POST   | ```/movies```                 | Add a new movie actor assignments to the database.                     |
+| PUT    | ```/movies/{movie_id}```      | Edit and update existing movie from the database.                      |
+| DELETE | ```/movies/{movie_id}```      | Delete a movie and his associations from the database.                 |
+| DELETE | ```/movies/batch```           | Delete multiple movies and their associations by their IDs.            |
 
 
 ## Technologies used
@@ -30,7 +37,7 @@ A RESTful API for managing a movie database, built with FastAPI and SQLite.
 MoviesDBREST/ 
 ├── main.py
 ├── test_main.http
-├── movies.db
+├── movies-extended.db
 ├── requirements.txt
 ├── README.md
 └── .gitignore
@@ -39,7 +46,7 @@ MoviesDBREST/
 ## Demo database
 <p style="text-align: justify;">
 
-The project includes a demonstration SQLite database ```movies.db``` with sample data
+The project includes a demonstration SQLite database ```movies-extended.db``` with sample data
 to allow quick startup and testing of the API.
 The database is intended for development purposes only.
 </p>
@@ -74,6 +81,8 @@ uvicorn main:app --reload
 
 3. Open API documentation: Go to http://127.0.0.1:8000/docs to see the interactive Swagger UI.
 
+
+4. Stop the server with ```Ctrl + C```.
 
 ## Testing
 1. Testing directly in Swagger UI:<br>
