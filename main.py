@@ -15,12 +15,10 @@ tags_metadata = [
     },
     {
         "name": "Other",
-        "description": "Other endpoints - not related to Movies.",
+        "description": "Other endpoints - not related to MovieDBREST.",
     },
 ]
 
-
-# app = FastAPI(openapi_tags=tags_metadata, swagger_ui_parameters={"operationsSorter": "alpha"})
 
 app = FastAPI(
     openapi_tags=tags_metadata,
@@ -62,13 +60,14 @@ def actors():
     Retrieve a list of all actors from the database.
     """
     db = sqlite3.connect('movies-extended.db')
+    db.execute("PRAGMA foreign_keys = ON")
+    db.row_factory = sqlite3.Row
     cursor = db.cursor()
-    actors = cursor.execute('SELECT * FROM actor').fetchall()
-    output = []
-    for actor in actors:
-        actor = {'id': actor[0], 'name': actor[1], 'surname': actor[2]}
-        output.append(actor)
-    return output
+    try:
+        actors = cursor.execute('SELECT * FROM actor').fetchall()
+        return [dict(row) for row in actors]
+    finally:
+        db.close()
 
 
 @app.get('/actors/{actor_id}', tags=["Actors"])
@@ -78,11 +77,17 @@ def get_single_actor(actor_id:int):
     Returns 404 if an actor is not found.
     """
     db = sqlite3.connect('movies-extended.db')
+    db.execute("PRAGMA foreign_keys = ON")
+    db.row_factory = sqlite3.Row
     cursor = db.cursor()
-    actor = cursor.execute(f"SELECT * FROM actor WHERE id={actor_id}").fetchone()
-    if actor is None:
-        raise HTTPException(status_code=404, detail="Actor not found!")
-    return {'id': actor[0], 'name': actor[1], 'surname': actor[2]}
+
+    try:
+        actor = cursor.execute("SELECT * FROM actor WHERE id=?", (actor_id,)).fetchone()
+        if actor is None:
+            raise HTTPException(status_code=404, detail="Actor not found!")
+        return dict(actor)
+    finally:
+        db.close()
 
 
 @app.post('/actors', tags=["Actors"])
@@ -95,24 +100,30 @@ def add_actor(params: dict[str, Any]):
     surname = params.get("surname")
 
     db = sqlite3.connect('movies-extended.db')
+    db.execute("PRAGMA foreign_keys = ON")
+    db.row_factory = sqlite3.Row
     cursor = db.cursor()
 
     if not name or not surname:
         raise HTTPException(status_code=400, detail="All fields: name and surname are required!")
 
-    # check duplicates
-    cursor.execute('SELECT id FROM actor WHERE name = ? AND surname = ?', (name, surname))
-    existing_actor = cursor.fetchone()
-    if existing_actor:
+    try:
+        # check duplicates
+        cursor.execute('SELECT id FROM actor WHERE name = ? AND surname = ?', (name, surname))
+        existing_actor = cursor.fetchone()
+        if existing_actor:
+            raise HTTPException(status_code=409, detail="Actor already exists in database!")
+
+        # insert actor into actor table
+        cursor.execute('INSERT INTO actor (name, surname) VALUES (?, ?)', (name, surname))
+        new_id = cursor.lastrowid
+        db.commit()
+        return {"message": "Actor has been added successfully!", "id": new_id}
+    except sqlite3.Error as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
         db.close()
-        raise HTTPException(status_code=409, detail="Actor already exists in database!")
-
-    cursor.execute('INSERT INTO actor (name, surname) VALUES (?, ?)', (name, surname))
-    db.commit()
-    new_id = cursor.lastrowid
-    db.close()
-
-    return {"message": "Actor has been added successfully!", "id": new_id}
 
 
 @app.put('/actors/{actor_id}', tags=["Actors"])
@@ -125,27 +136,34 @@ def edit_actor(actor_id: int, params: dict[str, Any]):
     new_name = params.get("name")
     new_surname = params.get("surname")
 
+    if not new_name or not new_surname:
+        raise HTTPException(status_code=400, detail="Fields title/director/year are required!")
+
     db = sqlite3.connect('movies-extended.db')
+    db.execute("PRAGMA foreign_keys = ON")
+    db.row_factory = sqlite3.Row
     cursor = db.cursor()
 
-    # check duplicates
-    cursor.execute('SELECT id FROM actor WHERE name = ? AND surname = ? AND id != ?', (new_name, new_surname, actor_id))
-    existing_actor = cursor.fetchone()
-    if existing_actor:
+    try:
+        cursor.execute('SELECT id FROM actor WHERE id = ?', (actor_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Actor not found!")
+
+        # check duplicates
+        cursor.execute('SELECT id FROM actor WHERE name = ? AND surname = ? AND id != ?', (new_name, new_surname, actor_id))
+        existing_actor = cursor.fetchone()
+        if existing_actor:
+            raise HTTPException(status_code=409, detail="Actor already exists. Update not allowed!")
+
+        cursor.execute('UPDATE actor SET name = ?, surname = ? WHERE id = ?',
+                       (new_name, new_surname, actor_id))
+        db.commit()
+        return {"message": f"Actor {actor_id} updated successfully!"}
+    except sqlite3.Error as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
         db.close()
-        raise HTTPException(status_code=409, detail="Actor already exists. Update not allowed!")
-
-    cursor.execute('UPDATE actor SET name = ?, surname = ? WHERE id = ?',
-                   (new_name, new_surname, actor_id))
-    db.commit()
-
-    rows_affected = cursor.rowcount
-    db.close()
-
-    if rows_affected == 0:
-        raise HTTPException(status_code=404, detail="Actor not found!")
-
-    return {"message": f"Actor {actor_id} updated successfully!"}
 
 
 @app.delete('/actors/batch', tags=["Actors"])
@@ -158,23 +176,34 @@ def del_actors(actor_ids: List[int] = Body(...)):
         raise HTTPException(status_code=400, detail="No actor(s) to remove! Please select at least one actor.")
 
     db = sqlite3.connect('movies-extended.db')
+    db.execute("PRAGMA foreign_keys = ON")
+    db.row_factory = sqlite3.Row
     cursor = db.cursor()
 
-    ids = ', '.join(['?'] * len(actor_ids))
-    cursor.execute('DELETE FROM actor WHERE id IN (' + ids + ')', actor_ids)
-    db.commit()
+    try:
+        ids = ', '.join(['?'] * len(actor_ids))
 
-    rows_deleted = cursor.rowcount
-    db.close()
+        # delete all actor assignments for all selected actors from movie_actor_through table
+        cursor.execute(f'DELETE FROM movie_actor_through WHERE actor_id IN ({ids})', actor_ids)
 
-    if rows_deleted < len(actor_ids):
-        return {
-            "message": f"Operation partially successful. Deleted {rows_deleted} out of {len(actor_ids)} requested movies.",
-            "requested_ids": actor_ids,
-            "actual_deleted_count": rows_deleted
-        }
+        # delete all selected actors from actor table
+        cursor.execute('DELETE FROM actor WHERE id IN (' + ids + ')', actor_ids)
 
-    return {"message": f"All selected actors deleted successfully!", "deleted_ids": actor_ids}
+        rows_deleted = cursor.rowcount
+        db.commit()
+
+        if rows_deleted < len(actor_ids):
+            return {
+                "message": f"Operation partially successful. Deleted {rows_deleted} out of {len(actor_ids)} requested actors.",
+                "requested_ids": actor_ids,
+                "actual_deleted_count": rows_deleted
+            }
+        return {"message": f"All selected actors with their associations deleted successfully!", "deleted_ids": actor_ids}
+    except sqlite3.Error as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
 
 
 @app.delete('/actors/{actor_id}', tags=["Actors"])
@@ -184,18 +213,28 @@ def del_actor(actor_id: int):
     Returns 404 if actor is not found.
     """
     db = sqlite3.connect('movies-extended.db')
+    db.execute("PRAGMA foreign_keys = ON")
+    db.row_factory = sqlite3.Row
     cursor = db.cursor()
 
-    cursor.execute('DELETE FROM actor WHERE id = ?', (actor_id,))
-    db.commit()
+    try:
+        cursor.execute('SELECT * FROM actor WHERE id = ?', (actor_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Actor not found!")
 
-    rows_affected = cursor.rowcount
-    db.close()
+        # delete actor assignments from movie_actor_through table
+        cursor.execute('DELETE FROM movie_actor_through WHERE actor_id = ?', (actor_id,))
 
-    if rows_affected == 0:
-        raise HTTPException(status_code=404, detail="Actor not found!")
-
-    return {"message": f"Actor with id {actor_id} deleted successfully!"}
+        # delete actor from actor table
+        cursor.execute('DELETE FROM actor WHERE id = ?', (actor_id,))
+        db.commit()
+        return {"message": f"Actor with id {actor_id} deleted successfully!"}
+    except sqlite3.Error as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
 
 
 # ------- Movies Endpoints --------
@@ -205,13 +244,12 @@ def get_movies():
     Retrieve a list of all movies from the database.
     """
     db = sqlite3.connect('movies-extended.db')
+    db.execute("PRAGMA foreign_keys = ON")
+    db.row_factory = sqlite3.Row
     cursor = db.cursor()
+
     movies = cursor.execute('SELECT * FROM movie').fetchall()
-    output = []
-    for movie in movies:
-        movie = {'id': movie[0], 'title': movie[1], 'director': movie[2], 'year': movie[3], 'description': movie[4]}
-        output.append(movie)
-    return output
+    return [dict(row) for row in movies]
 
 
 @app.get('/movies/{movie_id}', tags=["Movies"])
@@ -221,11 +259,14 @@ def get_single_movie(movie_id:int):
     Returns 404 if the movie is not found.
     """
     db = sqlite3.connect('movies-extended.db')
+    db.execute("PRAGMA foreign_keys = ON")
+    db.row_factory = sqlite3.Row
     cursor = db.cursor()
+
     movie = cursor.execute(f"SELECT * FROM movie WHERE id={movie_id}").fetchone()
     if movie is None:
         raise HTTPException(status_code=404, detail="Movie not found!")
-    return {'id': movie[0], 'title': movie[1], 'director': movie[2], 'year': movie[3], 'description': movie[4]}
+    return dict(movie)
 
 
 @app.post('/movies', tags=["Movies"])
@@ -240,29 +281,30 @@ def add_movie(params: dict[str, Any]):
     description = params.get("description")
     actor_ids = params.get("actor_ids", [])
 
-    db = sqlite3.connect('movies-extended.db')
-    cursor = db.cursor()
-
     if not title or not year or not director:
         raise HTTPException(status_code=400, detail="Fields title/director/year are required!")
+
+    db = sqlite3.connect('movies-extended.db')
+    db.execute("PRAGMA foreign_keys = ON")
+    db.row_factory = sqlite3.Row
+    cursor = db.cursor()
 
     try:
         # check duplicates
         cursor.execute('SELECT id FROM movie WHERE title = ? AND year = ?', (title, year))
         existing_movie = cursor.fetchone()
         if existing_movie:
-            db.close()
             raise HTTPException(status_code=409, detail="Movie already exists!")
 
         # insert movie into movie table
         cursor.execute('INSERT INTO movie (title, director, year, description) VALUES (?, ?, ?, ?)', (title, director, year, description))
-        # db.commit()
         new_id = cursor.lastrowid
 
-        # insert concatenations movie-actor into movie_actor_through table
+        # insert actor assignments into movie_actor_through table
         if actor_ids:
             # tuples [(movie_id, actor_id1), (movie_id, actor_id2), ...]
-            t = [(new_id, a_id) for a_id in actor_ids]
+            unique_actor_ids = list(set(actor_ids))
+            t = [(new_id, a_id) for a_id in unique_actor_ids]
             cursor.executemany('INSERT INTO movie_actor_through (movie_id, actor_id) VALUES (?, ?)', t)
 
         db.commit()
@@ -270,6 +312,9 @@ def add_movie(params: dict[str, Any]):
                 "movie_id": new_id,
                 "added_actor_count": len(actor_ids)
         }
+    except sqlite3.IntegrityError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
     except sqlite3.Error as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
@@ -280,34 +325,60 @@ def add_movie(params: dict[str, Any]):
 @app.put('/movies/{movie_id}', tags=["Movies"])
 def edit_movie(movie_id: int, params: dict[str, Any]):
     """
-    Edit and update a movie from the database.
+    Update movie details and refresh actor assignments.
     Checks for duplicates before updating.
     Returns 404 if the movie is not found.
     """
     new_title = params.get("title")
+    new_director = params.get("director")
     new_year = params.get("year")
-    new_actors = params.get("actors")
+    new_description = params.get("description")
+    new_actor_ids = params.get("actor_ids")
 
-    db = sqlite3.connect('movies.db')
+    if not new_title or not new_year or not new_director:
+        raise HTTPException(status_code=400, detail="Fields title/director/year are required!")
+
+    db = sqlite3.connect('movies-extended.db')
+    db.execute("PRAGMA foreign_keys = ON")
+    db.row_factory = sqlite3.Row
     cursor = db.cursor()
 
-    # check duplicates
-    cursor.execute('SELECT id FROM movies WHERE title = ? AND year = ? AND id != ?', (new_title, new_year, movie_id))
-    existing_movie = cursor.fetchone()
-    if existing_movie:
+    try:
+        cursor.execute('SELECT id FROM movie WHERE id = ?', (movie_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Movie not found!")
+
+        # check duplicates
+        cursor.execute('SELECT id FROM movie WHERE title = ? AND year = ? AND id != ?', (new_title, new_year, movie_id))
+        existing_movie = cursor.fetchone()
+        if existing_movie:
+            raise HTTPException(status_code=409, detail="Movie already exists. Update not allowed!")
+
+        cursor.execute('UPDATE movie SET title = ?, director = ?, year = ?, description = ? WHERE id = ?', (new_title, new_director, new_year, new_description, movie_id))
+
+        if new_actor_ids is not None:
+            cursor.execute('DELETE FROM movie_actor_through WHERE movie_id = ?', (movie_id,))
+
+            if new_actor_ids:
+                unique_new_actor_ids = list(set(new_actor_ids))
+                t = [(movie_id, a_id) for a_id in unique_new_actor_ids]
+                cursor.executemany('INSERT INTO movie_actor_through (movie_id, actor_id) VALUES (?, ?)', t)
+
+        db.commit()
+
+        return {
+            "message": f"Movie {movie_id} and actors updated successfully!",
+            "id": movie_id,
+            "updated_actors_count": len(new_actor_ids or [])
+        }
+    except sqlite3.IntegrityError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    except sqlite3.Error as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
         db.close()
-        raise HTTPException(status_code=409, detail="Movie already exists. Update not allowed!")
-
-    cursor.execute('UPDATE movies SET title = ?, year = ?, actors = ? WHERE id = ?', (new_title, new_year, new_actors, movie_id))
-    db.commit()
-
-    rows_affected = cursor.rowcount
-    db.close()
-
-    if rows_affected == 0:
-        raise HTTPException(status_code=404, detail="Movie not found!")
-
-    return {"message": f"Movie {movie_id} updated successfully!"}
 
 
 @app.delete('/movies/batch', tags=["Movies"])
@@ -319,25 +390,35 @@ def del_movies(movie_ids: List[int] = Body(...)):
     if not movie_ids:
         raise HTTPException(status_code=400, detail="No movie(s) to remove! Please select at least one movie.")
 
-    db = sqlite3.connect('movies.db')
+    db = sqlite3.connect('movies-extended.db')
+    db.execute("PRAGMA foreign_keys = ON")
+    db.row_factory = sqlite3.Row
     cursor = db.cursor()
 
-    ids = ', '.join(['?'] * len(movie_ids))
-    cursor.execute('DELETE FROM movies WHERE id IN (' + ids + ')', movie_ids)
-    db.commit()
+    try:
+        ids = ', '.join(['?'] * len(movie_ids))
 
-    rows_deleted = cursor.rowcount
-    db.close()
+        # delete all actor assignments for all selected movies
+        cursor.execute(f'DELETE FROM movie_actor_through WHERE movie_id IN ({ids})', movie_ids)
 
-    if rows_deleted < len(movie_ids):
-        return {
-            "message": f"Operation partially successful. Deleted {rows_deleted} out of {len(movie_ids)} requested movies.",
-            "requested_ids": movie_ids,
-            "actual_deleted_count": rows_deleted
-        }
+        # delete all selected movies
+        cursor.execute('DELETE FROM movie WHERE id IN (' + ids + ')', movie_ids)
 
-    return {"message": f"All selected movies deleted successfully!", "deleted_ids": movie_ids}
+        rows_deleted = cursor.rowcount
+        db.commit()
 
+        if rows_deleted < len(movie_ids):
+            return {
+                "message": f"Operation partially successful. Deleted {rows_deleted} out of {len(movie_ids)} requested movies.",
+                "requested_ids": movie_ids,
+                "actual_deleted_count": rows_deleted
+            }
+        return {"message": f"All selected movies with their associations deleted successfully!", "deleted_ids": movie_ids}
+    except sqlite3.Error as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
 
 
 @app.delete('/movies/{movie_id}', tags=["Movies"])
@@ -346,16 +427,55 @@ def del_movie(movie_id: int):
     Delete a movie from the database.
     Returns 404 if the movie is not found.
     """
-    db = sqlite3.connect('movies.db')
+    db = sqlite3.connect('movies-extended.db')
+    db.execute("PRAGMA foreign_keys = ON")
+    db.row_factory = sqlite3.Row
     cursor = db.cursor()
 
-    cursor.execute('DELETE FROM movies WHERE id = ?', (movie_id,))
-    db.commit()
+    try:
+        cursor.execute('SELECT * FROM movie WHERE id = ?', (movie_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Movie not found!")
 
-    rows_affected = cursor.rowcount
-    db.close()
+        # delete actor assignments from movie_actor_through table
+        cursor.execute('DELETE FROM movie_actor_through WHERE movie_id = ?', (movie_id,))
 
-    if rows_affected == 0:
-        raise HTTPException(status_code=404, detail="Movie not found!")
+        # delete movie from movie table
+        cursor.execute('DELETE FROM movie WHERE id = ?', (movie_id,))
+        db.commit()
+        return {"message": f"Movie with id {movie_id} deleted successfully!"}
+    except sqlite3.Error as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
 
-    return {"message": f"Movie with id {movie_id} deleted successfully!"}
+
+@app.get('/movies/{movie_id}/actors', tags=["Movies"])
+def get_actors_for_movie(movie_id: int):
+    """
+    Retrieve all actors assigned to a specific movie.
+    """
+    db = sqlite3.connect('movies-extended.db')
+    db.execute("PRAGMA foreign_keys = ON")
+    db.row_factory = sqlite3.Row
+    cursor = db.cursor()
+
+    try:
+        cursor.execute('SELECT * FROM movie WHERE id = ?', (movie_id,))
+        movie = cursor.fetchone()
+        if not movie:
+            raise HTTPException(status_code=404, detail="Movie not found!")
+
+        cursor.execute('SELECT a.id, a.name, a.surname FROM actor a JOIN movie_actor_through mat ON a.id = mat.actor_id WHERE mat.movie_id = ?', (movie_id,))
+        actors = cursor.fetchall()
+
+        return {
+            "movie_title": movie["title"],
+            "actors": [dict(row) for row in actors]
+        }
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
