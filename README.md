@@ -35,9 +35,11 @@ A RESTful API for managing a movie database, built with FastAPI and SQLite.
 ## Project structure
 ```
 MoviesDBREST/ 
-├── main.py
-├── test_main.http
-├── movies-extended.db
+├── main.py                 # API Routing & Request Handling
+├── db.py                   # Database connection
+├── crud.py                 # CRUD (Create, Read, Update, Delete) Operations
+├── test_main.http          # API Testing
+├── movies-extended.db      # Demo database
 ├── requirements.txt
 ├── README.md
 └── .gitignore
@@ -85,6 +87,7 @@ uvicorn main:app --reload
 4. Stop the server with ```Ctrl + C```.
 
 ## Testing
+Ensure the server is running before testing.
 1. Testing directly in Swagger UI:<br>
 Go to http://127.0.0.1:8000/docs.
 Each endpoint includes ```Try it out``` button that allows to send requests directly from the browser, inspect request/response bodies, and verify that the API behaves as expected.
@@ -109,14 +112,13 @@ curl -X 'GET' \
 - Ex 2:
 ```
 curl -X 'POST' \
-  'http://127.0.0.1:8000/movies' \
+  'http://127.0.0.1:8000/actors' \
   -H 'accept: application/json' \
   -H 'Content-Type: application/json' \
-  -d '  {
-    "title": "Pulp Fiction",
-    "year": 1994,
-    "actors": "Tim Roth, Amanda Plummer, Laura Lovelace, John Travolta"
-  }'
+  -d '{
+  "name": "Ingrid",
+  "surname": "Bergman"
+}'
 ```
 - Ex 3:
 ```
@@ -124,6 +126,17 @@ curl -X 'DELETE' \
   'http://127.0.0.1:8000/movies/10' \
   -H 'accept: application/json'
 ```
+
+## Handled HTTP Status Codes
+
+| Status Code | Name                    | Description                                                           | Example                                                                      |
+|-------------|-------------------------|-----------------------------------------------------------------------|------------------------------------------------------------------------------|
+| **200**     | OK                      | The request was successful.                                           | Adding a new movie/actor or retrieving a list.                               |
+| **400**     | Bad Request             | Mandatory fields are missing or invalid IDs were provided.            | Missing actor name or providing a non-existent actor_id during adding movie. |
+| **404**     | Not Found               | The requested resource does not exist.                                | Trying to retrieve/delete a movie with a non-existent movie_id.              |
+| **409**     | Conflict                | The operation violates business rules such as uniqueness constraints  | Attempting to add an actor who is already registered in the database.        | 
+| **500**     | Internal Server Error   | An unexpected server-side error occurred.                             | Database file is locked or a connection failure occurs.                      |           
+
 
 ## Author
 **Anna Czopko** \

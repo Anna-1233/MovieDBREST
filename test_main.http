@@ -1,5 +1,4 @@
 # Test your FastAPI endpoints
-
 GET http://127.0.0.1:8000/movies
 Accept: application/json
 
@@ -10,18 +9,33 @@ Accept: application/json
 
 ###
 
-POST http://127.0.0.1:8000/movies/
+POST http://127.0.0.1:8000/movies
+Accept: application/json
 Content-Type: application/json
 
 {
   "title": "Casablanca",
+  "director": "Michael Curtiz",
   "year": 1942,
-  "actors": "Humphrey Bogart, Ingrid Bergman, Paul Henreid, Claude Rains"
+  "description": "A romantic drama set during World War II in which a cynical nightclub owner must choose between love and moral responsibility in a city filled with refugees and intrigue."
 }
 
 ###
 
-DELETE http://127.0.0.1:8000/movies/10
+PUT http://127.0.0.1:8000/movies/1
+Accept: application/json
+Content-Type: application/json
+
+{
+  "title": "Jaws",
+  "director": "Steven Spielberg",
+  "year": 1975,
+  "description": "A small coastal town is terrorized by a massive great white shark, forcing a police chief, a marine biologist, and a seasoned fisherman to confront the deadly threat."
+}
+
+###
+
+DELETE http://127.0.0.1:8000/movies/6
 Accept: application/json
 
 ###
@@ -34,12 +48,50 @@ Content-Type: application/json
 
 ###
 
-PUT http://127.0.0.1:8000/movies/1
+GET http://127.0.0.1:8000/movies/1/actors
+Accept: application/json
+
+###
+
+GET http://127.0.0.1:8000/actors
+Accept: application/json
+
+###
+
+GET http://127.0.0.1:8000/actors/9
+Accept: application/json
+
+###
+
+POST http://127.0.0.1:8000/actors
 Accept: application/json
 Content-Type: application/json
 
 {
-  "title": "The Matrix",
-  "year": 2000,
-  "actors": "Keanu Reeves, Laurence Fishburne"
+  "name": "Keanu",
+  "surname": "Reeves"
 }
+
+###
+
+PUT http://127.0.0.1:8000/actors/6
+Accept: application/json
+Content-Type: application/json
+
+{
+  "name": "Jodie",
+  "surname": "Foster"
+}
+
+###
+
+DELETE http://127.0.0.1:8000/actors/8
+Accept: application/json
+
+###
+
+DELETE http://127.0.0.1:8000/actors/batch
+Accept: application/json
+Content-Type: application/json
+
+[29, 30]

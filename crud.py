@@ -1,5 +1,4 @@
 import sqlite3
-from typing import Any
 from db import get_db_conn
 
 

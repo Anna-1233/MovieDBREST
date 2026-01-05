@@ -208,7 +208,7 @@ def add_movie(params: dict[str, Any]):
         result = crud.post_movie(title, director, year, description, actor_ids)
 
         if result == "duplicate":
-            raise HTTPException(status_code=409, detail="Movie already exists! Update not allowed!")
+            raise HTTPException(status_code=409, detail="Movie already exists!")
         elif result == "invalid_actors":
             raise HTTPException(status_code=400, detail="One or more actor IDs do not exist.")
         return {"message": "Movie added successfully!",
